@@ -1,0 +1,64 @@
+import ccxt
+import time
+
+# Set up the exchange (replace 'binance' with your desired exchange)
+exchange = ccxt.binance()
+
+# Set up your API credentials (replace with your own)
+exchange.apiKey = '2XcORfvSpaOdbcZXYQn3GOFemqy2kX3pxHq0S9dKNy1vI9R0TVZ6JQl8NMwSkQqt'
+exchange.secret = 'dqZfOfEdXJ6JzqliRDvcifECgq5m0v1eXxkUmC8aCu4g7um57TBxXAv7jR1jgnwu'
+
+# Define the symbol and parameters
+symbol = 'BTC/USDT'  # Replace with your desired trading pair
+num_safety_orders = 17
+drop_threshold = 0.015  # 1.5% drop threshold
+volume_scale = 1.0  # $1 volume per trade
+
+# Get the average position value
+def get_average_position():
+    average_position = 0
+    return average_position
+
+
+# Calculate the safety order volume
+def calculate_safety_order_volume(average_position):
+    return volume_scale
+
+
+# Place a safety order
+def place_safety_order(volume):
+    try:
+        # Get the current market price for the trading pair
+        ticker = exchange.fetch_ticker(symbol)
+        price = ticker['close']
+
+        # Adjust the price to the required precision
+        price = round(price, exchange.markets[symbol]['precision']['price'])
+
+        # Place the safety order
+        order = exchange.create_order(symbol, 'limit', 'buy', volume, price)
+        print(f"Safety order placed: {order}")
+    except ccxt.ExchangeError as e:
+        print(f"Failed to place safety order: {str(e)}")
+    except ccxt.NetworkError as e:
+        print(f"Network error occurred: {str(e)}")
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+# Main trading strategy
+def start_long_strategy():
+    while True:
+        average_position = get_average_position()
+        safety_order_volume = calculate_safety_order_volume(average_position)
+
+        for _ in range(num_safety_orders):
+            if drop_threshold >= 0.0:  # Replace with your desired exit condition
+                place_safety_order(safety_order_volume)
+
+            # Implement additional logic or wait for a certain time before checking again
+            time.sleep(5)  # Wait for 5 seconds
+
+
+# Execute the trading strategy
+start_long_strategy()
