@@ -1,5 +1,6 @@
 # Import necessary libraries
-import random
+import ccxt
+import time
 
 # Define the symbol and parameters
 symbol = 'BTC/USDT'  # Trading pair
