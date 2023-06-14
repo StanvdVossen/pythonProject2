@@ -1,0 +1,68 @@
+import time
+from backtesting import Backtest, Strategy
+from backtesting.lib import crossover
+from backtesting.test import SMA
+
+exchange_id = 'bybit'
+exchange_class = getattr(ccxt, exchange_id)
+exchange = exchange_class({
+    'apiKey': 'YOUR_API_KEY',
+    'secret': 'YOUR_API_SECRET',
+    'options': {
+        'defaultType': 'spot',
+        'createMarketBuyOrderRequiresPrice': False
+    }
+})
+
+# Define the symbol and parameters
+symbol = 'BTC/USDT'  # Replace with your desired trading pair
+num_safety_orders = 17
+drop_threshold = 0.015  # 1.5% drop threshold
+volume_scale = 0.012  # 1.2% volume scale
+
+
+# Define the backtesting strategy
+class MyStrategy(Strategy):
+    def init(self):
+        self.average_position = 0.0
+        self.safety_order_volume = 0.0
+
+    def next(self):
+        if self.drop_threshold >= 0.0:  # Replace with your desired exit condition
+            self.place_safety_order()
+
+        # Implement additional logic or wait for a certain time before checking again
+
+    def get_average_position(self):
+        # Implement your logic to calculate the average position value
+        # Set self.average_position to the calculated value
+        pass
+
+    def calculate_safety_order_volume(self):
+        self.safety_order_volume = self.average_position * volume_scale
+
+    def place_safety_order(self):
+        order_result = exchange.create_market_order(
+            symbol=symbol,
+            side='buy',
+            amount=self.safety_order_volume
+        )
+        # Perform additional operations or checks on order_result if needed
+
+
+# Define the backtest
+bt = Backtest(
+    data=None,  # Add your historical data here
+    strategy=MyStrategy,
+    cash=100000,  # Replace with your desired initial capital
+    commission=0.0  # Replace with your desired commission rate
+)
+
+# Run the backtest
+bt.run()
+
+# Retrieve the backtest results
+results = bt.get_formatted_results()
+print(results)
+
+
