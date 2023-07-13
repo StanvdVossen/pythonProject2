@@ -1,0 +1,312 @@
+#3Commas BOT / 17 safety orders uitgeschreven
+
+import ccxt
+
+# Function query account
+exchange_id = 'bybit'
+exchange_class = getattr(ccxt, exchange_id)
+exchange = exchange_class({
+    'apiKey': 'mGgNwDLzmzgNz75y7J',
+    'secret': 'JJEKR9RSg2acYL7ZUndfZaAA2y4LY4vNhDA5',
+    'options': {
+        'defaultType': 'spot',
+        'recvWindow': 5000,
+        'createMarketBuyOrderRequiresPrice': False
+    }
+})
+
+# Check if the API key is connected successfully
+try:
+    exchange.load_markets()
+    print("API key connected successfully.")
+except ccxt.AuthenticationError:
+    print("Failed to connect API key. Please check your credentials.")
+    exit()
+
+
+# Check Spot Balance
+def print_spot_balance():
+    balance = exchange.fetch_balance()
+
+    if 'total' in balance and 'USDT' in balance['total']:
+        usdt_balance = balance['total']['USDT']
+        print(f"Spot Balance ({'USDT'}): {usdt_balance}")
+    else:
+        print(f"Failed to fetch spot balance for {'USDT'}.")
+
+
+print_spot_balance()
+
+# Variable to define the current price
+symbol = 'XRP/USDT'
+
+
+# Show the current price of Symbol
+def print_current_price() -> symbol:
+    global symbol  # Explicitly specify the outer variable
+    ticker = exchange.fetch_ticker(symbol)
+    current_price_value = ticker['last']
+
+    print(f"Current Price of {symbol}: {current_price_value}")
+
+
+# Call the function
+print_current_price()
+
+# Define initial parameters
+quantity = 1.0
+safety_order_count = 17
+price_deviation = -0.015
+completed_orders = []
+volume_scale = 0.012
+
+
+# Function to place a buy order
+def place_buy_order(amount):
+    try:
+        inner_buy_order = exchange.create_market_buy_order(
+            symbol=symbol,
+            amount=amount
+        )
+        return inner_buy_order
+    except Exception as e:
+        print("Error placing the buy order:", str(e))
+        return None
+
+
+# Place the buy order
+buy_order = place_buy_order(quantity)
+
+# Check if the buy order was successful
+if buy_order is not None and isinstance(buy_order, dict) and 'info' in buy_order:
+    print("Buy order filled successfully.")
+else:
+    error_message = (
+        buy_order['info']['ret_msg']
+        if isinstance(buy_order, dict) and 'info' in buy_order and 'ret_msg' in buy_order['info']
+        else "Unknown error"
+    )
+    print(f"Error placing the buy order: {error_message}")
+
+
+# Calculate the average entry position
+def calculate_average_entry_position(orders):
+    total_quantity = 0.0
+    total_cost = 0.0
+
+    for order in orders:
+        total_quantity += order['quantity']
+        total_cost += order['cost']
+
+    if total_quantity != 0:
+        average_entry_position = total_cost / total_quantity
+    else:
+        average_entry_position = 0.0
+
+    return average_entry_position
+
+
+# Calculate the new position size
+new_position_size = calculate_average_entry_position(completed_orders) * volume_scale
+
+# Calculate the quantity for safety orders
+safety_order_quantity = new_position_size * 1.2  # Volume scale for the safety orders
+
+
+# Function to check if you take profit condition is met
+def check_take_profit(average_position):
+    current_price = latest_ticker['last']
+    profit_percentage = (current_price - average_position) / average_position * 100
+
+    if profit_percentage >= 1.3:
+        return True
+    else:
+        return False
+
+
+# Main loop to monitor price and place subsequent buy orders
+while True:
+    # Get the latest price
+    latest_ticker = exchange.fetch_ticker(symbol)
+    current_price = latest_ticker['last']
+
+    # Check if the price dropped by the specified deviation
+    if current_price < calculate_average_entry_position(completed_orders) + \
+            (calculate_average_entry_position(completed_orders) * price_deviation):
+
+        # Place the new buy order
+        buy_order_result = place_buy_order(new_position_size)
+
+        # Check if the buy order was successful
+        if buy_order_result is not None and isinstance(buy_order_result, dict) and 'info' in buy_order_result:
+            completed_orders.append(buy_order_result)
+            print("Buy order filled successfully.")
+
+            # Implement the seventh safety order
+            seventh_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if seventh_safety_order_result is not None and isinstance(seventh_safety_order_result,
+                                                                      dict) and 'info' in seventh_safety_order_result:
+                completed_orders.append(seventh_safety_order_result)
+                print(
+                    f"Seventh safety order filled successfully. Price: {seventh_safety_order_result['price']}, Volume: {seventh_safety_order_result['amount']}")
+            else:
+                error_message = seventh_safety_order_result['info']['ret_msg'] if \
+                    isinstance(seventh_safety_order_result, dict) and 'info' in seventh_safety_order_result and \
+                    'ret_msg' in seventh_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the seventh safety order: {error_message}")
+
+            # Implement the eighth safety order
+            eighth_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if eighth_safety_order_result is not None and isinstance(eighth_safety_order_result,
+                                                                     dict) and 'info' in eighth_safety_order_result:
+                completed_orders.append(eighth_safety_order_result)
+                print(
+                    f"Eighth safety order filled successfully. Price: {eighth_safety_order_result['price']}, Volume: {eighth_safety_order_result['amount']}")
+            else:
+                error_message = eighth_safety_order_result['info']['ret_msg'] if \
+                    isinstance(eighth_safety_order_result, dict) and 'info' in eighth_safety_order_result and \
+                    'ret_msg' in eighth_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the eighth safety order: {error_message}")
+
+            # Implement the ninth safety order
+            ninth_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if ninth_safety_order_result is not None and isinstance(ninth_safety_order_result,
+                                                                    dict) and 'info' in ninth_safety_order_result:
+                completed_orders.append(ninth_safety_order_result)
+                print(
+                    f"Ninth safety order filled successfully. Price: {ninth_safety_order_result['price']}, Volume: {ninth_safety_order_result['amount']}")
+            else:
+                error_message = ninth_safety_order_result['info']['ret_msg'] if \
+                    isinstance(ninth_safety_order_result, dict) and 'info' in ninth_safety_order_result and \
+                    'ret_msg' in ninth_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the ninth safety order: {error_message}")
+
+            # Implement the tenth safety order
+            tenth_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if tenth_safety_order_result is not None and isinstance(tenth_safety_order_result,
+                                                                    dict) and 'info' in tenth_safety_order_result:
+                completed_orders.append(tenth_safety_order_result)
+                print(
+                    f"Tenth safety order filled successfully. Price: {tenth_safety_order_result['price']}, Volume: {tenth_safety_order_result['amount']}")
+            else:
+                error_message = tenth_safety_order_result['info']['ret_msg'] if \
+                    isinstance(tenth_safety_order_result, dict) and 'info' in tenth_safety_order_result and \
+                    'ret_msg' in tenth_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the tenth safety order: {error_message}")
+
+            # Implement the eleventh safety order
+            eleventh_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if eleventh_safety_order_result is not None and isinstance(eleventh_safety_order_result,
+                                                                       dict) and 'info' in eleventh_safety_order_result:
+                completed_orders.append(eleventh_safety_order_result)
+                print(
+                    f"Eleventh safety order filled successfully. Price: {eleventh_safety_order_result['price']}, Volume: {eleventh_safety_order_result['amount']}")
+            else:
+                error_message = eleventh_safety_order_result['info']['ret_msg'] if \
+                    isinstance(eleventh_safety_order_result, dict) and 'info' in eleventh_safety_order_result and \
+                    'ret_msg' in eleventh_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the eleventh safety order: {error_message}")
+
+            # Implement the twelfth safety order
+            twelfth_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if twelfth_safety_order_result is not None and isinstance(twelfth_safety_order_result,
+                                                                      dict) and 'info' in twelfth_safety_order_result:
+                completed_orders.append(twelfth_safety_order_result)
+                print(
+                    f"Twelfth safety order filled successfully. Price: {twelfth_safety_order_result['price']}, Volume: {twelfth_safety_order_result['amount']}")
+            else:
+                error_message = twelfth_safety_order_result['info']['ret_msg'] if \
+                    isinstance(twelfth_safety_order_result, dict) and 'info' in twelfth_safety_order_result and \
+                    'ret_msg' in twelfth_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the twelfth safety order: {error_message}")
+
+            # Implement the thirteenth safety order
+            thirteenth_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if thirteenth_safety_order_result is not None and isinstance(thirteenth_safety_order_result,
+                                                                         dict) and 'info' in thirteenth_safety_order_result:
+                completed_orders.append(thirteenth_safety_order_result)
+                print(
+                    f"Thirteenth safety order filled successfully. Price: {thirteenth_safety_order_result['price']}, Volume: {thirteenth_safety_order_result['amount']}")
+            else:
+                error_message = thirteenth_safety_order_result['info']['ret_msg'] if \
+                    isinstance(thirteenth_safety_order_result, dict) and 'info' in thirteenth_safety_order_result and \
+                    'ret_msg' in thirteenth_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the thirteenth safety order: {error_message}")
+
+            # Implement the fourteenth safety order
+            fourteenth_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if fourteenth_safety_order_result is not None and isinstance(fourteenth_safety_order_result,
+                                                                         dict) and 'info' in fourteenth_safety_order_result:
+                completed_orders.append(fourteenth_safety_order_result)
+                print(
+                    f"Fourteenth safety order filled successfully. Price: {fourteenth_safety_order_result['price']}, Volume: {fourteenth_safety_order_result['amount']}")
+            else:
+                error_message = fourteenth_safety_order_result['info']['ret_msg'] if \
+                    isinstance(fourteenth_safety_order_result, dict) and 'info' in fourteenth_safety_order_result and \
+                    'ret_msg' in fourteenth_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the fourteenth safety order: {error_message}")
+
+            # Implement the fifteenth safety order
+            fifteenth_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if fifteenth_safety_order_result is not None and isinstance(fifteenth_safety_order_result,
+                                                                        dict) and 'info' in fifteenth_safety_order_result:
+                completed_orders.append(fifteenth_safety_order_result)
+                print(
+                    f"Fifteenth safety order filled successfully. Price: {fifteenth_safety_order_result['price']}, Volume: {fifteenth_safety_order_result['amount']}")
+            else:
+                error_message = fifteenth_safety_order_result['info']['ret_msg'] if \
+                    isinstance(fifteenth_safety_order_result, dict) and 'info' in fifteenth_safety_order_result and \
+                    'ret_msg' in fifteenth_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the fifteenth safety order: {error_message}")
+
+            # Implement the sixteenth safety order
+            sixteenth_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if sixteenth_safety_order_result is not None and isinstance(sixteenth_safety_order_result,
+                                                                        dict) and 'info' in sixteenth_safety_order_result:
+                completed_orders.append(sixteenth_safety_order_result)
+                print(
+                    f"Sixteenth safety order filled successfully. Price: {sixteenth_safety_order_result['price']}, Volume: {sixteenth_safety_order_result['amount']}")
+            else:
+                error_message = sixteenth_safety_order_result['info']['ret_msg'] if \
+                    isinstance(sixteenth_safety_order_result, dict) and 'info' in sixteenth_safety_order_result and \
+                    'ret_msg' in sixteenth_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the sixteenth safety order: {error_message}")
+
+            # Implement the seventeenth safety order
+            seventeenth_safety_order_result = place_buy_order(safety_order_quantity)
+
+            if seventeenth_safety_order_result is not None and isinstance(seventeenth_safety_order_result,
+                                                                          dict) and 'info' in seventeenth_safety_order_result:
+                completed_orders.append(seventeenth_safety_order_result)
+                print(
+                    f"Seventeenth safety order filled successfully. Price: {seventeenth_safety_order_result['price']}, Volume: {seventeenth_safety_order_result['amount']}")
+            else:
+                error_message = seventeenth_safety_order_result['info']['ret_msg'] if \
+                    isinstance(seventeenth_safety_order_result, dict) and 'info' in seventeenth_safety_order_result and \
+                    'ret_msg' in seventeenth_safety_order_result['info'] else "Unknown error"
+                print(f"Error placing the seventeenth safety order: {error_message}")
+
+    # Check if you take profit condition is met
+    if check_take_profit(calculate_average_entry_position(completed_orders)):
+        # Place the take profit order
+        take_profit_order_result = place_buy_order(new_position_size)
+
+        if take_profit_order_result is not None and isinstance(take_profit_order_result,
+                                                               dict) and 'info' in take_profit_order_result:
+            completed_orders.append(take_profit_order_result)
+            print(
+                f"Take profit order filled successfully. Price: {take_profit_order_result['price']}, Volume: {take_profit_order_result['amount']}")
+        else:
+            error_message = take_profit_order_result['info']['ret_msg'] if \
+                isinstance(take_profit_order_result, dict) and 'info' in take_profit_order_result and \
+                'ret_msg' in take_profit_order_result['info'] else "Unknown error"
