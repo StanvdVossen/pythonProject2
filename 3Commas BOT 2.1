@@ -43,6 +43,7 @@ symbol = 'XRP/USDT'
 
 # Show the current price of Symbol
 def print_current_price():
+    global symbol  # Explicitly specify the outer variable
     ticker = exchange.fetch_ticker(symbol)
     current_price_value = ticker['last']
 
@@ -79,6 +80,7 @@ buy_order = place_buy_order(quantity)
 # Check if the buy order was successful
 if buy_order is not None and isinstance(buy_order, dict) and 'info' in buy_order:
     print("Buy order filled successfully.")
+    print(f"Price: {buy_order['price']}, Volume: {buy_order['amount']}")
 else:
     error_message = (
         buy_order['info']['ret_msg']
@@ -94,7 +96,7 @@ def calculate_average_entry_position(orders):
     total_cost = 0.0
 
     for order in orders:
-        total_quantity += order['quantity']
+        total_quantity += order['amount']
         total_cost += order['cost']
 
     if total_quantity != 0:
@@ -112,10 +114,13 @@ new_position_size = calculate_average_entry_position(completed_orders) * volume_
 safety_order_quantity = new_position_size * 1.2  # Volume scale for the safety orders
 
 
-# Function to check if your take profit condition is met
-def check_take_profit(average_position, order_count):
-    current_price = latest_ticker['last']
-    profit_percentage = (current_price - average_position) / average_position * 100
+# Function to check if the take profit condition is met
+def check_take_profit(average_position):
+    if average_position == 0:
+        return False
+    
+    atm_price = latest_ticker['last']
+    profit_percentage = (atm_price - average_position) / average_position * 100
 
     if profit_percentage >= 1.3:
         return True
@@ -132,7 +137,6 @@ while True:
     # Check if the price dropped by the specified deviation
     if current_price < calculate_average_entry_position(completed_orders) + \
             (calculate_average_entry_position(completed_orders) * price_deviation):
-
         # Place the new buy order
         buy_order_result = place_buy_order(new_position_size)
 
@@ -140,26 +144,37 @@ while True:
         if buy_order_result is not None and isinstance(buy_order_result, dict) and 'info' in buy_order_result:
             completed_orders.append(buy_order_result)
             print("Buy order filled successfully.")
+            print(f"Price: {buy_order_result['price']}, Volume: {buy_order_result['amount']}")
 
-            # Implement safety orders
-            for i in range(7, safety_order_count + 1):
+            # Implement the safety orders
+            for i in range(1, safety_order_count + 1):
                 safety_order_result = place_buy_order(safety_order_quantity)
 
-                if safety_order_result is not None and isinstance(safety_order_result, dict) and 'info' in safety_order_result:
+                if safety_order_result is not None and isinstance(safety_order_result,
+                                                                  dict) and 'info' in safety_order_result:
                     completed_orders.append(safety_order_result)
-                    print(f"{i}th safety order filled successfully. Price: {safety_order_result['price']}, Volume: {safety_order_result['amount']}")
+                    print(f"{i}th safety order filled successfully.")
+                    print(
+                        f"Price: {safety_order_result['price']}, Volume: {safety_order_result['amount']}")
                 else:
-                    error_message = safety_order_result['info']['ret_msg'] if isinstance(safety_order_result, dict) and 'info' in safety_order_result and 'ret_msg' in safety_order_result['info'] else "Unknown error"
+                    error_message = safety_order_result['info']['ret_msg'] if \
+                        isinstance(safety_order_result, dict) and 'info' in safety_order_result and \
+                        'ret_msg' in safety_order_result['info'] else "Unknown error"
                     print(f"Error placing the {i}th safety order: {error_message}")
 
-    # Check if your take profit condition is met
-    if check_take_profit(calculate_average_entry_position(completed_orders), safety_order_count):
+    # Check if the take profit condition is met
+    if check_take_profit(calculate_average_entry_position(completed_orders)):
         # Place the take profit order
         take_profit_order_result = place_buy_order(new_position_size)
 
-        if take_profit_order_result is not None and isinstance(take_profit_order_result, dict) and 'info' in take_profit_order_result:
+        if take_profit_order_result is not None and isinstance(take_profit_order_result,
+                                                               dict) and 'info' in take_profit_order_result:
             completed_orders.append(take_profit_order_result)
-            print(f"Take profit order filled successfully. Price: {take_profit_order_result['price']}, Volume: {take_profit_order_result['amount']}")
+            print("Take profit order filled successfully.")
+            print(
+                f"Price: {take_profit_order_result['price']}, Volume: {take_profit_order_result['amount']}")
         else:
-            error_message = take_profit_order_result['info']['ret_msg'] if isinstance(take_profit_order_result, dict) and 'info' in take_profit_order_result and 'ret_msg' in take_profit_order_result['info'] else "Unknown error"
+            error_message = take_profit_order_result['info']['ret_msg'] if \
+                isinstance(take_profit_order_result, dict) and 'info' in take_profit_order_result and \
+                'ret_msg' in take_profit_order_result['info'] else "Unknown error"
             print(f"Error placing the take profit order: {error_message}")
