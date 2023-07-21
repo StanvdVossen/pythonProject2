@@ -162,19 +162,12 @@ def monitor(exchange):
 
     while True:
         try:
-            print_spot_balance(exchange)  # Monitor spot balance
-
             # Fetch open orders and display their status
             open_orders = exchange.fetch_open_orders(symbol)
             if open_orders:
                 logging.info(f"Open orders for {symbol}:")
                 for order in open_orders:
                     logging.info(order)
-
-            # Fetch and display account balance
-            account_balance = exchange.fetch_balance()
-            logging.info(f"Account balance:")
-            logging.info(account_balance)
 
             # Implement logic to check if a trade has been executed and update trade history,
             # For example, you can check filled orders and calculate profit/loss for each trade
@@ -197,6 +190,14 @@ def monitor(exchange):
 
                     # Log the trade information
                     logging.info(f"Trade filled - Symbol: {order['symbol']}, Type: {order['type']}, Amount: {order['amount']}, Price: {order['price']}, Timestamp: {order['timestamp']}")
+
+                    # Log spot balance when a trade is executed
+                    print_spot_balance(exchange)
+
+                    # Log account balance when a trade is executed
+                    account_balance = exchange.fetch_balance()
+                    logging.info(f"Account balance:")
+                    logging.info(account_balance)
 
             # Wait for the next iteration (adjust this time to your preference)
             time.sleep(30)  # Wait for 30 seconds before the next iteration
