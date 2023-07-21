@@ -1,0 +1,217 @@
+import ccxt
+import time
+import logging
+import Config
+
+# Set up logging to display logs in the console
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+# Function to create the exchange instance and handle API authentication
+def create_exchange():
+    exchange_id = 'bybit'
+    exchange_class = getattr(ccxt, exchange_id)
+    exchange = exchange_class({
+        'apiKey': Config.API_KEY,
+        'secret': Config.API_SECRET,
+        'options': {
+            'defaultType': 'spot',
+            'recvWindow': 5000,
+            'createMarketBuyOrderRequiresPrice': False
+        }
+    })
+
+    # Check if the API key is connected successfully
+    try:
+        exchange.load_markets()
+        logging.info("API connection completed.")
+        return exchange
+    except ccxt.AuthenticationError:
+        logging.error("Failed to connect API key. Please check your credentials.")
+        exit()
+
+
+# Constants based on your parameters
+symbol = 'XRP/USDT'
+base_order_size = 2.7  # XRP
+take_profit_percentage = 0.03  # 3%
+price_deviation_percentage = 0.02  # 2%
+safety_order_count = 17
+volume_scale_pro_safety_order = 0.2  # 20%
+
+
+# Function to check spot balance
+def print_spot_balance(exchange):
+    try:
+        balance = exchange.fetch_balance()
+        if 'total' in balance and 'USDT' in balance['total']:
+            usdt_balance = balance['total']['USDT']
+            logging.info(f"Spot Balance (USDT): {usdt_balance}")
+        else:
+            logging.warning(f"Failed to fetch spot balance for USDT.")
+    except Exception as e:
+        logging.error(f"Error fetching spot balance: {e}")
+
+
+def calculate_average_position_size(exchange):
+    try:
+        orders = exchange.fetch_my_trades(symbol)  # Fetch all your trades for the given symbol
+        xrp_orders = [order for order in orders if order['symbol'] == symbol]  # Filter only XRP trades
+
+        total_position_size = sum([abs(order['amount']) for order in xrp_orders])
+        total_trade_count = len(xrp_orders)
+
+        if total_trade_count > 0:
+            average_position_size = total_position_size / total_trade_count
+        else:
+            average_position_size = 0.0
+
+        return average_position_size
+    except Exception as e:
+        print(f"Error calculating average position size: {e}")
+        return 0.0
+
+
+# Function to calculate take profit level
+def calculate_take_profit(average_position_size):
+    return average_position_size * (1 + take_profit_percentage)
+
+
+# Function to calculate safety order size
+def calculate_safety_order_size(average_position_size):
+    return average_position_size * (1 + volume_scale_pro_safety_order)
+
+
+# Function to place a market buy order
+def place_buy_order(exchange, amount, price=None):
+    try:
+        if price:
+            order = exchange.create_limit_buy_order(symbol, amount, price)
+        else:
+            order = exchange.create_market_buy_order(symbol, amount)
+
+        # Log order information in the terminal after the order is executed
+        filled_order_info = exchange.fetch_order(order['id'], symbol)
+        invested_amount_price = filled_order_info['cost']
+        symbol_price_at_fill = filled_order_info['price']
+        filled_timestamp = filled_order_info['timestamp']
+        filled_order_id = filled_order_info['id']
+
+        logging.info(
+            f"Buy order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+        return order
+    except Exception as e:
+        logging.error(f"Error creating buy order: {e}")
+        return None
+
+
+# Function to place a market sell order
+def place_sell_order(exchange, amount):
+    try:
+        order = exchange.create_market_sell_order(symbol, amount)
+        # Log order information in the terminal after the order is executed
+        filled_order_info = exchange.fetch_order(order['id'], symbol)
+        invested_amount_price = filled_order_info['cost']
+        symbol_price_at_fill = filled_order_info['price']
+        filled_timestamp = filled_order_info['timestamp']
+        filled_order_id = filled_order_info['id']
+
+        logging.info(
+            f"Sell order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+        return order
+    except Exception as e:
+        logging.error(f"Error creating sell order: {e}")
+        return None
+
+
+# Function to create a market order (buy/sell)
+def create_order(exchange, order_type, amount, price=None):
+    try:
+        if order_type == 'buy':
+            return place_buy_order(exchange, amount, price)
+        elif order_type == 'sell':
+            return place_sell_order(exchange, amount)
+        else:
+            logging.error(f"Invalid order type: {order_type}")
+            return None
+    except Exception as e:
+        logging.error(f"Error creating order: {e}")
+        return None
+
+
+# Function to place the base order
+def place_base_order(exchange):
+    try:
+        # Check the minimum order size for the symbol
+        symbol_info = exchange.markets.get(symbol)
+        if symbol_info['limits']['amount']['min'] > base_order_size:
+            logging.error(f"The base order size is below the minimum order size for {symbol}.")
+            return
+
+        # Place a market buy order for the base order
+        create_order(exchange, 'buy', base_order_size)
+    except Exception as e:
+        logging.error(f"Error placing base order: {e}")
+
+
+# Function to monitor the bot status
+def monitor(exchange):
+    trade_history = []  # List to store trade history
+
+    while True:
+        try:
+            print_spot_balance(exchange)  # Monitor spot balance
+
+            # Fetch open orders and display their status
+            open_orders = exchange.fetch_open_orders(symbol)
+            if open_orders:
+                logging.info(f"Open orders for {symbol}:")
+                for order in open_orders:
+                    logging.info(order)
+
+            # Fetch and display account balance
+            account_balance = exchange.fetch_balance()
+            logging.info(f"Account balance:")
+            logging.info(account_balance)
+
+            # Implement logic to check if a trade has been executed and update trade history,
+            # For example, you can check filled orders and calculate profit/loss for each trade
+            # and append the trade details to the trade_history list
+            filled_orders = exchange.fetch_closed_orders(symbol)
+            for order in filled_orders:
+                if order['status'] == 'closed':
+                    # Calculate profit/loss for the filled order;
+                    # For example, you can calculate profit/loss based on the filled price and the base order size
+
+                    # Add the trade details to the trade_history list
+                    trade_history.append({
+                        'symbol': order['symbol'],
+                        'type': order['type'],
+                        'amount': order['amount'],
+                        'price': order['price'],
+                        'timestamp': order['timestamp'],
+                        'profit': 0.0  # Replace 0.0 with the calculated profit/loss
+                    })
+
+                    # Log the trade information
+                    logging.info(f"Trade filled - Symbol: {order['symbol']}, Type: {order['type']}, Amount: {order['amount']}, Price: {order['price']}, Timestamp: {order['timestamp']}")
+
+            # Wait for the next iteration (adjust this time to your preference)
+            time.sleep(30)  # Wait for 30 seconds before the next iteration
+
+        except Exception as e:
+            logging.error(f"Error in monitoring loop: {e}")
+
+
+def main():
+    exchange_instance = create_exchange()  # Create the exchange instance
+    print_spot_balance(exchange_instance)  # Print spot balance at the beginning
+    place_base_order(exchange_instance)  # Place the base order at the beginning
+
+    monitor(exchange_instance)  # Monitor the bot status
+
+
+if __name__ == "__main__":
+    main()
