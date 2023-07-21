@@ -1,0 +1,297 @@
+import ccxt
+import time
+import logging
+import Config
+
+# Set up logging to display logs in the console
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+# Function to create the exchange instance and handle API authentication
+def create_exchange():
+    exchange_id = 'bybit'
+    exchange_class = getattr(ccxt, exchange_id)
+    exchange = exchange_class({
+        'apiKey': Config.API_KEY,
+        'secret': Config.API_SECRET,
+        'options': {
+            'defaultType': 'spot',
+            'recvWindow': 5000,
+            'createMarketBuyOrderRequiresPrice': False
+        }
+    })
+
+    # Check if the API key is connected successfully
+    try:
+        exchange.load_markets()
+        logging.info("API key connected successfully.")
+        return exchange
+    except ccxt.AuthenticationError:
+        logging.error("Failed to connect API key. Please check your credentials.")
+        exit()
+
+
+# Check Spot Balance
+def print_spot_balance(exchange):
+    balance = exchange.fetch_balance()
+
+    if 'total' in balance and 'USDT' in balance['total']:
+        usdt_balance = balance['total']['USDT']
+        logging.info(f"Spot Balance (USDT): {usdt_balance}")
+    else:
+        logging.warning(f"Failed to fetch spot balance for USDT.")
+
+
+# Function to place a market order
+def place_market_order(exchange, symbol, quantity, order_type):
+    order = None  # Initialize order variable
+    order_type_str = 'Buy' if order_type == 'buy' else 'Sell'  # Define order_type_str
+
+    try:
+        if order_type == 'buy':
+            order = exchange.create_market_buy_order(
+                symbol=symbol,
+                amount=quantity
+            )
+        elif order_type == 'sell':
+            order = exchange.create_market_sell_order(
+                symbol=symbol,
+                amount=quantity
+            )
+
+        if order is not None and isinstance(order, dict) and 'info' in order:
+            if 'price' in order['info']:
+                order['price'] = order['info']['price']  # Add the price information
+            else:
+                order['price'] = None  # Set a default value if price is not available
+
+            logging.info(
+                f"{order_type_str} order filled successfully. Price: {order['price']}, Amount: {order['amount']}")
+
+            # Print order information
+            print_order_info(order_type_str, order)
+
+            return order
+        else:
+            inner_error_message = order['info']['ret_msg'] if isinstance(order,
+                                                                         dict) and 'info' in order and 'ret_msg' in \
+                                                              order['info'] else "Unknown error"
+            logging.error(f"Error placing the {order_type_str} order: {inner_error_message}")
+            print(f"{order_type_str} order response:", order)  # Print the response object
+            return None
+    except ccxt.ExchangeError as e:
+        error_message = str(e)
+        logging.error(f"Error placing the {order_type_str} order: {error_message}")
+        print(f"{order_type_str} order response:", order)  # Print the response object
+        return None
+
+
+# Function to place a limit order
+def place_limit_order(exchange, symbol, price, amount, order_type):
+    order = None  # Initialize order variable
+    order_type_str = 'Buy' if order_type == 'buy' else 'Sell'  # Define order_type_str
+
+    try:
+        if order_type == 'buy':
+            order = exchange.create_limit_buy_order(
+                symbol=symbol,
+                price=price,
+                amount=amount
+            )
+        elif order_type == 'sell':
+            order = exchange.create_limit_sell_order(
+                symbol=symbol,
+                price=price,
+                amount=amount
+            )
+
+        if order is not None and isinstance(order, dict) and 'info' in order:
+            order_id = order['id']  # Get the order ID
+            logging.info(
+                f"{order_type_str} order placed successfully. Order ID: {order_id}, Price: {order['price']}, Amount: {order['amount']}")
+
+            # Print order information
+            print_order_info(order_type_str, order)
+
+            return order
+        else:
+            inner_error_message = order['info']['ret_msg'] if isinstance(order,
+                                                                         dict) and 'info' in order and 'ret_msg' in \
+                                                              order['info'] else "Unknown error"
+            logging.error(f"Error placing the {order_type_str} order: {inner_error_message}")
+            print(f"{order_type_str} order response:", order)  # Print the response object
+            return None
+    except ccxt.ExchangeError as e:
+        error_message = str(e)
+        logging.error(f"Error placing the {order_type_str} order: {error_message}")
+        print(f"{order_type_str} order response:", order)  # Print the response object
+        return None
+
+
+# Function to print order information
+def print_order_info(order_type, order):
+    order_id = order['id']
+    filled_time = order['timestamp']
+    amount = order['amount']
+    price = order['price']
+
+    logging.info(f"Order Type: {order_type}")
+    logging.info(f"Order ID: {order_id}")
+    logging.info(f"Filled Time: {filled_time}")
+    logging.info(f"Amount: {amount}")
+    logging.info(f"Price: {price}")
+
+
+# Function to check if the take-profit condition is met
+def check_take_profit(exchange, symbol, average_position):
+    # Get the latest ticker price
+    ticker = exchange.fetch_ticker(symbol)
+    atm_price = ticker['last']
+
+    if average_position >= 1.0:
+        logging.info("No completed orders yet. Cannot calculate average position.")
+        return False
+
+    profit_percentage = (atm_price - average_position) / average_position * 100
+
+    if profit_percentage >= 1.0:
+        # Calculate the take profit price
+        take_profit_price = average_position * 1.015  # 1.5% profit target, adjust as needed
+
+        # Place the sell order to take profit as a limit order
+        sell_order = place_limit_order(exchange, symbol, take_profit_price, average_position, 'sell')
+        if sell_order is not None:
+            logging.info("Take profit order placed successfully.")
+            logging.info(f"Price: {sell_order['price']}, Amount: {sell_order['amount']}")
+            return True
+        else:
+            logging.error("Error placing the take profit order.")
+            return False
+
+    return False
+
+
+# Function to calculate the average entry position
+def calculate_average_entry_position(orders):
+    total_quantity = 0.0
+    total_cost = 0.0
+
+    for order in orders:
+        total_quantity += order['amount']
+        total_cost += order['price'] * order['amount']
+
+    if total_quantity != 0:
+        average_entry_position = total_cost / total_quantity
+    else:
+        average_entry_position = 0.0
+
+    return average_entry_position
+
+
+# Function to print the current price
+def print_current_price(exchange, symbol):
+    ticker = exchange.fetch_ticker(symbol)
+    current_price = ticker['last']
+    logging.info(f"Current Price: {current_price}")
+
+
+# Function to monitor price and place subsequent orders
+def monitor_price_and_orders(exchange, symbol, base_order_amount, safety_order_count, price_deviation, volume_scale):
+    completed_orders = []  # Initialize the completed orders list
+
+    while True:
+        # Get the latest price
+        # print_current_price(exchange, symbol)
+        latest_ticker = exchange.fetch_ticker(symbol)
+        current_price = latest_ticker['last']
+
+        # Check if the price dropped by the specified deviation
+        if current_price < calculate_average_entry_position(completed_orders) * (1 + price_deviation):
+            # Place the new buy order
+            buy_order = place_market_order(exchange, symbol, base_order_amount, 'buy')
+            if not buy_order:
+                logging.error("Error placing the new buy order.")
+                return
+            completed_orders.append(buy_order)
+
+            # Check if the take-profit condition is met
+            check_take_profit(exchange, symbol, calculate_average_entry_position(completed_orders))
+
+            # Place subsequent safety orders as limit orders
+            for i in range(1, safety_order_count + 1):
+                # Calculate the safety order price
+                previous_order = completed_orders[-1]
+                safety_order_price = previous_order['price'] * (1 + price_deviation)
+
+                # Calculate the safety order amount
+                filled_orders = [order for order in completed_orders if order['status'] == 'filled']
+                total_invested_amount = sum([order['amount'] for order in filled_orders])
+                number_of_filled_orders = len(filled_orders)
+                safety_order_amount = (total_invested_amount / number_of_filled_orders) * (1 + volume_scale)
+
+                # Place the safety order
+                safety_order = place_limit_order(exchange, symbol, safety_order_price, safety_order_amount, 'buy')
+                if not safety_order:
+                    logging.error(f"Error placing safety order #{i}.")
+                    return
+
+                completed_orders.append(safety_order)
+
+        # Sleep for 5 seconds
+        time.sleep(5)
+
+
+# Validate and sanitize user input
+def validate_input(symbol, base_order_amount, safety_order_count, price_deviation, volume_scale):
+    # Validate symbol
+    if not isinstance(symbol, str) or '/' not in symbol:
+        raise ValueError("Invalid symbol. Please provide a valid symbol in the format 'BASE/QUOTE'.")
+
+    # Validate base_order_amount
+    if not isinstance(base_order_amount, (int, float)) or base_order_amount <= 0:
+        raise ValueError("Invalid base_order_amount. Please provide a positive numeric value.")
+
+    # Validate safety_order_count
+    if not isinstance(safety_order_count, int) or safety_order_count < 1:
+        raise ValueError("Invalid safety_order_count. Please provide a positive integer value.")
+
+    # Validate price_deviation
+    if not isinstance(price_deviation, (int, float)) or price_deviation <= -1:
+        raise ValueError("Invalid price_deviation. Please provide a numeric value greater than -1.")
+
+    # Validate volume_scale
+    if not isinstance(volume_scale, (int, float)) or volume_scale < 0:
+        raise ValueError("Invalid volume_scale. Please provide a non-negative numeric value.")
+
+
+# Function to run the trading algorithm
+def run_trading_algorithm(symbol, base_order_amount, safety_order_count, price_deviation, volume_scale):
+    # Create the exchange instance
+    exchange = create_exchange()
+
+    # Check Spot Balance
+    print_spot_balance(exchange)
+
+    # Place the initial buy order
+    base_order = place_market_order(exchange, symbol, base_order_amount, 'buy')
+    if not base_order:
+        logging.error("Error placing the initial buy order.")
+        return
+
+    # Print the current price
+    # print_current_price(exchange, symbol)
+
+    # Monitor price and place subsequent orders
+    monitor_price_and_orders(exchange, symbol, base_order_amount, safety_order_count, price_deviation, volume_scale)
+
+
+# Define initial parameters
+symbol_param = 'XRP/USDT'
+base_order_amount_param = 1.0
+safety_order_count_param = 17
+price_deviation_param = -0.02
+volume_scale_param = 0.012
+
+# Run the trading algorithm
+run_trading_algorithm(symbol_param, base_order_amount_param, safety_order_count_param, price_deviation_param,
+                      volume_scale_param)
