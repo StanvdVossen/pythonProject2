@@ -1,0 +1,266 @@
+import ccxt
+import time
+import logging
+import Config
+
+# Set up logging to display logs in the console
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+# Function to create the exchange instance and handle API authentication
+def create_exchange():
+    exchange_id = 'bybit'
+    exchange_class = getattr(ccxt, exchange_id)
+    exchange = exchange_class({
+        'apiKey': Config.API_KEY,
+        'secret': Config.API_SECRET,
+        'options': {
+            'defaultType': 'spot',
+            'recvWindow': 5000,
+            'createMarketBuyOrderRequiresPrice': False
+        }
+    })
+
+    # Check if the API key is connected successfully
+    try:
+        exchange.load_markets()
+        logging.info("API connection completed.")
+        return exchange
+    except ccxt.AuthenticationError:
+        logging.error("Failed to connect API key. Please check your credentials.")
+        exit()
+
+
+# Constants based on your parameters
+symbol = 'XRP/USDT'
+base_order_size = 2.7  # XRP
+take_profit_percentage = 0.03  # 3%
+price_deviation_percentage = 0.02  # 2%
+safety_order_count = 17
+volume_scale_pro_safety_order = 1.2  # 120%
+
+
+# Function to check spot balance
+def print_spot_balance(exchange):
+    try:
+        balance = exchange.fetch_balance()
+        if 'total' in balance and 'USDT' in balance['total']:
+            usdt_balance = balance['total']['USDT']
+            logging.info(f"Spot Balance (USDT): {usdt_balance}")
+        else:
+            logging.warning(f"Failed to fetch spot balance for USDT.")
+    except Exception as e:
+        logging.error(f"Error fetching spot balance: {e}")
+
+
+# Function to place a market sell order
+def place_market_sell_order(exchange, amount):
+    try:
+        order = exchange.create_market_sell_order(symbol, amount)
+        # Log order information in the terminal after the order is executed
+        filled_order_info = exchange.fetch_order(order['id'], symbol)
+        invested_amount_price = filled_order_info['cost']
+        symbol_price_at_fill = filled_order_info['price']
+        filled_timestamp = filled_order_info['timestamp']
+        filled_order_id = filled_order_info['id']
+
+        logging.info(
+            f"Market sell order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+        return order
+    except Exception as e:
+        logging.error(f"Error creating market sell order: {e}")
+        return None
+
+
+# Function to place a limit sell order
+def place_limit_sell_order(exchange, amount, price):
+    try:
+        order = exchange.create_limit_sell_order(symbol, amount, price)
+        # Log order information in the terminal after the order is executed
+        filled_order_info = exchange.fetch_order(order['id'], symbol)
+        invested_amount_price = filled_order_info['cost']
+        symbol_price_at_fill = filled_order_info['price']
+        filled_timestamp = filled_order_info['timestamp']
+        filled_order_id = filled_order_info['id']
+
+        logging.info(
+            f"Limit sell order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+        return order
+    except Exception as e:
+        logging.error(f"Error creating limit sell order: {e}")
+        return None
+
+# Function to place a market buy order
+def place_market_buy_order(exchange, amount):
+    try:
+        order = exchange.create_market_buy_order(symbol, amount)
+        # Log order information in the terminal after the order is executed
+        filled_order_info = exchange.fetch_order(order['id'], symbol)
+        invested_amount_price = filled_order_info['cost']
+        symbol_price_at_fill = filled_order_info['price']
+        filled_timestamp = filled_order_info['timestamp']
+        filled_order_id = filled_order_info['id']
+
+        logging.info(
+            f"Market buy order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+        return order
+    except Exception as e:
+        logging.error(f"Error creating market buy order: {e}")
+        return None
+
+
+# Function to place a limit buy order
+def place_limit_buy_order(exchange, amount, price):
+    try:
+        order = exchange.create_limit_buy_order(symbol, amount, price)
+        # Log order information in the terminal after the order is executed
+        filled_order_info = exchange.fetch_order(order['id'], symbol)
+        invested_amount_price = filled_order_info['cost']
+        symbol_price_at_fill = filled_order_info['price']
+        filled_timestamp = filled_order_info['timestamp']
+        filled_order_id = filled_order_info['id']
+
+        logging.info(
+            f"Limit buy order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+        return order
+    except Exception as e:
+        logging.error(f"Error creating limit buy order: {e}")
+        return None
+
+
+def create_order(exchange, order_type, amount, price=None):
+    try:
+        if order_type == 'buy' and price is None:
+            return place_market_buy_order(exchange, amount)
+        elif order_type == 'buy' and price is not None:
+            return place_limit_buy_order(exchange, amount, price)
+        elif order_type == 'sell' and price is None:
+            return place_market_sell_order(exchange, amount)
+        elif order_type == 'sell' and price is not None:
+            return place_limit_sell_order(exchange, amount, price)
+        else:
+            logging.error(f"Invalid order type or price not provided.")
+            return None
+    except Exception as e:
+        logging.error(f"Error creating order: {e}")
+        return None
+
+
+# Function to place the base order
+def place_base_order(exchange, base_order_size):
+    try:
+        # Check the minimum order size for the symbol
+        symbol_info = exchange.markets.get(symbol)
+        if symbol_info['limits']['amount']['min'] > base_order_size:
+            logging.error(f"The base order size is below the minimum order size for {symbol}.")
+            return
+
+        # Place a market buy order for the base order
+        create_order(exchange, 'buy', base_order_size)
+    except Exception as e:
+        logging.error(f"Error placing base order: {e}")
+
+
+# Function to place a limit sell order for take profit
+def place_limit_sell_order_take_profit(exchange, amount, take_profit_percentage):
+    try:
+        # Calculate take profit price
+        average_position_price = exchange.calculate_average_position_price(symbol)
+        take_profit_price = average_position_price * (1 + take_profit_percentage)
+
+        order = exchange.create_limit_sell_order(symbol, amount, take_profit_price)
+        # Log order information in the terminal after the order is executed
+        filled_order_info = exchange.fetch_order(order['id'], symbol)
+        invested_amount_price = filled_order_info['cost']
+        symbol_price_at_fill = filled_order_info['price']
+        filled_timestamp = filled_order_info['timestamp']
+        filled_order_id = filled_order_info['id']
+
+        logging.info(
+            f"Limit sell order for take profit filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+        return order
+    except Exception as e:
+        logging.error(f"Error creating limit sell order for take profit: {e}")
+        return None
+
+
+# Function to place a market sell order for take profit
+def place_market_sell_order_take_profit(exchange, amount, take_profit_percentage):
+    try:
+        # Calculate take profit price
+        average_position_price = exchange.calculate_average_position_price(symbol)
+        take_profit_price = average_position_price * (1 + take_profit_percentage)
+
+        order = exchange.create_market_sell_order(symbol, amount)
+        # Log order information in the terminal after the order is executed
+        filled_order_info = exchange.fetch_order(order['id'], symbol)
+        invested_amount_price = filled_order_info['cost']
+        symbol_price_at_fill = filled_order_info['price']
+        filled_timestamp = filled_order_info['timestamp']
+        filled_order_id = filled_order_info['id']
+
+        logging.info(
+            f"Market sell order for take profit filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+        return order
+    except Exception as e:
+        logging.error(f"Error creating market sell order for take profit: {e}")
+        return None
+
+
+# Function to calculate the volume of each safety order based on the volume scale
+def calculate_volume_safety_order(average_position_size, volume_scale_pro_safety_order, safety_order_count):
+    try:
+        volumes = []
+        current_volume = average_position_size
+
+        for _ in range(safety_order_count):
+            volumes.append(current_volume)
+            current_volume *= volume_scale_pro_safety_order
+
+        return volumes
+    except Exception as e:
+        logging.error(f"Error calculating volumes for safety orders: {e}")
+        return []
+
+
+def calculate_volume_safety_orders(base_order_size, volume_scale_pro_safety_order, safety_order_count, average_position_size):
+    safety_orders = [base_order_size]
+
+    for i in range(1, safety_order_count):
+        prev_safety_order = safety_orders[-1]
+        next_safety_order = prev_safety_order * volume_scale_pro_safety_order
+        safety_orders.append(next_safety_order)
+
+    return safety_orders
+
+
+# Example usage:
+exchange_instance = create_exchange()
+
+if exchange_instance is not None:
+    print_spot_balance(exchange_instance)
+    place_base_order(exchange_instance, base_order_size)
+    place_limit_sell_order_take_profit(exchange_instance, 1.2, take_profit_percentage)
+    place_market_sell_order_take_profit(exchange_instance, 1.5, take_profit_percentage)
+
+    average_position_size = calculate_average_position_size(exchange_instance)
+
+    if average_position_size > 0:
+        safety_orders = calculate_volume_safety_orders(base_order_size, volume_scale_pro_safety_order, safety_order_count, average_position_size)
+        if safety_orders is not None:
+            print(f"Base Order Size: {base_order_size} XRP")
+            print(f"Volume Scale per Safety Order: {volume_scale_pro_safety_order * 100}%")
+            for i, order_volume in enumerate(safety_orders):
+                print(f"Volume of Safety Order {i+1}: {order_volume} XRP")
+        else:
+            print("Error occurred while calculating volumes for safety orders.")
+    else:
+        print("No average position size available. Please check if you have placed any trades.")
+else:
+    print("Failed to create the exchange instance.")
