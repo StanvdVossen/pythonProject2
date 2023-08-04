@@ -2,217 +2,347 @@ import ccxt
 import time
 import logging
 import Config
-
-# Set up logging to display logs in the console
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-
-# Function to create the exchange instance and handle API authentication
-def create_exchange():
-    exchange_id = 'bybit'
-    exchange_class = getattr(ccxt, exchange_id)
-    exchange = exchange_class({
-        'apiKey': Config.API_KEY,
-        'secret': Config.API_SECRET,
-        'options': {
-            'defaultType': 'spot',
-            'recvWindow': 5000,
-            'createMarketBuyOrderRequiresPrice': False
-        }
-    })
-
-    # Check if the API key is connected successfully
-    try:
-        exchange.load_markets()
-        logging.info("API connection completed.")
-        return exchange
-    except ccxt.AuthenticationError:
-        logging.error("Failed to connect API key. Please check your credentials.")
-        exit()
+import backtrader as bt
+import datetime
 
 
-# Constants based on your parameters
-symbol = 'XRP/USDT'
-base_order_size = 2.7  # XRP
-take_profit_percentage = 0.03  # 3%
-price_deviation_percentage = 0.02  # 2%
-safety_order_count = 17
-volume_scale_pro_safety_order = 0.2  # 20%
+class MyStrategy(bt.Strategy):
+    params = (
+        ('base_order_size', 2.7),
+        ('take_profit_percentage', 0.03),
+        ('symbol', 'XRP/USDT'),
+        ('price_deviation_percentage', 0.02),
+        ('safety_order_count', 17),
+        ('volume_scale_pro_safety_order', 1.2)
+    )
 
 
-# Function to check spot balance
-def print_spot_balance(exchange):
-    try:
-        balance = exchange.fetch_balance()
-        if 'total' in balance and 'USDT' in balance['total']:
-            usdt_balance = balance['total']['USDT']
-            logging.info(f"Spot Balance (USDT): {usdt_balance}")
-        else:
-            logging.warning(f"Failed to fetch spot balance for USDT.")
-    except Exception as e:
-        logging.error(f"Error fetching spot balance: {e}")
+# ... (Your existing imports)
 
+class MyStrategy(bt.Strategy):
+    params = (
+        ('base_order_size', 2.7),
+        ('take_profit_percentage', 0.03),
+        ('symbol', 'XRP/USDT'),
+        ('price_deviation_percentage', 0.02),
+        ('safety_order_count', 17),
+        ('volume_scale_pro_safety_order', 1.2)
+    )
 
-def calculate_average_position_size(exchange):
-    try:
-        orders = exchange.fetch_my_trades(symbol)  # Fetch all your trades for the given symbol
-        xrp_orders = [order for order in orders if order['symbol'] == symbol]  # Filter only XRP trades
+    def __init__(self):
+        self.volume_scale_pro_safety_order = None
+        self.safety_order_count = None
+        self.exchange = None
+        self.price_deviation_percentage = None
+        self.take_profit_percentage = None
+        self.base_order_size = None
+        self.symbol = None
+        self.trade_history = []
 
-        total_position_size = sum([abs(order['amount']) for order in xrp_orders])
-        total_trade_count = len(xrp_orders)
+    def start(self):
+        # Initialize indicators or other variables - All those functions has been fixed with "tuple"
+        self.symbol = self.params.symbol
+        self.base_order_size = self.params.base_order_size
+        self.take_profit_percentage = self.params.take_profit_percentage
+        self.price_deviation_percentage = self.params.price_deviation_percentage
+        self.safety_order_count = self.params.safety_order_count
+        self.volume_scale_pro_safety_order = self.params.volume_scale_pro_safety_order
 
-        if total_trade_count > 0:
-            average_position_size = total_position_size / total_trade_count
-        else:
-            average_position_size = 0.0
+        # Initialize the exchange instance
+        self.exchange = self.create_exchange()
 
-        return average_position_size
-    except Exception as e:
-        print(f"Error calculating average position size: {e}")
-        return 0.0
+        # Print initial spot balance
+        self.print_spot_balance()
 
-
-# Function to calculate take profit level
-def calculate_take_profit(average_position_size):
-    return average_position_size * (1 + take_profit_percentage)
-
-
-# Function to calculate safety order size
-def calculate_safety_order_size(average_position_size):
-    return average_position_size * (1 + volume_scale_pro_safety_order)
-
-
-# Function to place a market buy order
-def place_buy_order(exchange, amount, price=None):
-    try:
-        if price:
-            order = exchange.create_limit_buy_order(symbol, amount, price)
-        else:
-            order = exchange.create_market_buy_order(symbol, amount)
-
-        # Log order information in the terminal after the order is executed
-        filled_order_info = exchange.fetch_order(order['id'], symbol)
-        invested_amount_price = filled_order_info['cost']
-        symbol_price_at_fill = filled_order_info['price']
-        filled_timestamp = filled_order_info['timestamp']
-        filled_order_id = filled_order_info['id']
-
-        logging.info(
-            f"Buy order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
-
-        return order
-    except Exception as e:
-        logging.error(f"Error creating buy order: {e}")
-        return None
-
-
-# Function to place a market sell order
-def place_sell_order(exchange, amount):
-    try:
-        order = exchange.create_market_sell_order(symbol, amount)
-        # Log order information in the terminal after the order is executed
-        filled_order_info = exchange.fetch_order(order['id'], symbol)
-        invested_amount_price = filled_order_info['cost']
-        symbol_price_at_fill = filled_order_info['price']
-        filled_timestamp = filled_order_info['timestamp']
-        filled_order_id = filled_order_info['id']
-
-        logging.info(
-            f"Sell order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
-
-        return order
-    except Exception as e:
-        logging.error(f"Error creating sell order: {e}")
-        return None
-
-
-# Function to create a market order (buy/sell)
-def create_order(exchange, order_type, amount, price=None):
-    try:
-        if order_type == 'buy':
-            return place_buy_order(exchange, amount, price)
-        elif order_type == 'sell':
-            return place_sell_order(exchange, amount)
-        else:
-            logging.error(f"Invalid order type: {order_type}")
-            return None
-    except Exception as e:
-        logging.error(f"Error creating order: {e}")
-        return None
-
-
-# Function to place the base order
-def place_base_order(exchange):
-    try:
-        # Check the minimum order size for the symbol
-        symbol_info = exchange.markets.get(symbol)
-        if symbol_info['limits']['amount']['min'] > base_order_size:
-            logging.error(f"The base order size is below the minimum order size for {symbol}.")
-            return
-
-        # Place a market buy order for the base order
-        create_order(exchange, 'buy', base_order_size)
-    except Exception as e:
-        logging.error(f"Error placing base order: {e}")
-
-
-# Function to monitor the bot status
-def monitor(exchange):
-    trade_history = []  # List to store trade history
-
-    while True:
+    def print_spot_balance(self):
         try:
-            # Fetch open orders and display their status
-            open_orders = exchange.fetch_open_orders(symbol)
-            if open_orders:
-                logging.info(f"Open orders for {symbol}:")
-                for order in open_orders:
-                    logging.info(order)
+            balance = self.exchange.fetch_balance()
+            if 'total' in balance and 'USDT' in balance['total']:
+                usdt_balance = balance['total']['USDT']
+                self.log(f"Spot Balance (USDT): {usdt_balance}")
+            else:
+                self.log("Failed to fetch spot balance for USDT.", logging.WARNING)
+        except Exception as e:
+            self.log(f"Error fetching spot balance: {e}", logging.ERROR)
 
-            # Implement logic to check if a trade has been executed and update trade history,
-            # For example, you can check filled orders and calculate profit/loss for each trade
-            # and append the trade details to the trade_history list
-            filled_orders = exchange.fetch_closed_orders(symbol)
-            for order in filled_orders:
-                if order['status'] == 'closed':
-                    # Calculate profit/loss for the filled order;
-                    # For example, you can calculate profit/loss based on the filled price and the base order size
+    def next(self):
+        # Implement your trading strategy logic here
+        self.log(f"Current Price: {self.data.close[0]}")
 
-                    # Add the trade details to the trade_history list
-                    trade_history.append({
-                        'symbol': order['symbol'],
-                        'type': order['type'],
-                        'amount': order['amount'],
-                        'price': order['price'],
-                        'timestamp': order['timestamp'],
-                        'profit': 0.0  # Replace 0.0 with the calculated profit/loss
-                    })
+        # Example: Place orders, calculate indicators, etc.
+        if self.data.close[0] > self.data.close[-1]:
+            self.log("Buy Signal!")
+            self.buy(size=self.base_order_size)
 
-                    # Log the trade information
-                    logging.info(f"Trade filled - Symbol: {order['symbol']}, Type: {order['type']}, Amount: {order['amount']}, Price: {order['price']}, Timestamp: {order['timestamp']}")
+    def create_exchange(self):
+        # Create and configure the exchange instance
+        exchange_id = 'bybit'
+        exchange_class = getattr(ccxt, exchange_id)
+        exchange = exchange_class({
+            'apiKey': Config.API_KEY,
+            'secret': Config.API_SECRET,
+            'options': {
+                'defaultType': 'spot',
+                'recvWindow': 5000,
+                'createMarketBuyOrderRequiresPrice': False
+            }
+        })
 
-                    # Log spot balance when a trade is executed
-                    print_spot_balance(exchange)
+        # Check if the API key is connected successfully
+        try:
+            exchange.load_markets()
 
-                    # Log account balance when a trade is executed
-                    account_balance = exchange.fetch_balance()
-                    logging.info(f"Account balance:")
-                    logging.info(account_balance)
+            # Synchronize local time with the exchange server time
+            server_time = exchange.fetch_time()
+            local_time = int(time.time() * 1000)  # Convert current time to milliseconds
+            time_difference = local_time - server_time
+            exchange.options['adjustForTimeDifference'] = True
+            exchange.rateLimit = exchange.rateLimit - time_difference
 
-            # Wait for the next iteration (adjust this time to your preference)
-            time.sleep(30000)  # Wait for 30 seconds before the next iteration
+            self.log("API connection completed.")
+            return exchange
+        except ccxt.AuthenticationError:
+            self.log("Failed to connect API key. Please check your credentials.", logging.ERROR)
+            return None
+
+    def place_market_sell_order(self, amount):
+        try:
+            sell_order = self.exchange.create_market_sell_order(self.params.symbol, amount)
+            # Log order information in the terminal after the order is executed
+            filled_order_info = self.exchange.fetch_order(sell_order['id'], self.params.symbol)
+            invested_amount_price = filled_order_info['cost']
+            symbol_price_at_fill = filled_order_info['price']
+            filled_timestamp = filled_order_info['timestamp']
+            filled_order_id = filled_order_info['id']
+
+            self.log(
+                f"Market sell order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+            return sell_order
+        except Exception as e:
+            self.log(f"Error creating market sell order: {e}", logging.ERROR)
+            return None
+
+    def place_limit_sell_order(self, amount, price):
+        try:
+            sell_order = self.exchange.create_limit_sell_order(self.params.symbol, amount, price)
+            # Log order information in the terminal after the order is executed
+            filled_order_info = self.exchange.fetch_order(sell_order['id'], self.params.symbol)
+            invested_amount_price = filled_order_info['cost']
+            symbol_price_at_fill = filled_order_info['price']
+            filled_timestamp = filled_order_info['timestamp']
+            filled_order_id = filled_order_info['id']
+
+            self.log(
+                f"Limit sell order filled - Invested Amount Price: {invested_amount_price}, Symbol Price at Fill: {symbol_price_at_fill}, Filled Time: {filled_timestamp}, Order ID: {filled_order_id}")
+
+            return sell_order
+        except Exception as e:
+            self.log(f"Error creating limit sell order: {e}", logging.ERROR)
+            return None
+
+    def place_market_buy_order(self, amount):
+        try:
+            buy_order = self.buy(data=self.datas[0], size=amount, exectype=bt.Order.Market)
+
+            # Log order information
+            self.log(f"Market buy order placed - Amount: {amount}")
+
+            return buy_order
+        except Exception as e:
+            self.log(f"Error creating market buy order: {e}", logging.ERROR)
+            return None
+
+    def place_limit_buy_order(self, amount, price):
+        try:
+            buy_order = self.buy(data=self.datas[0], size=amount, exectype=bt.Order.Limit, price=price)
+
+            # Log order information
+            self.log(f"Limit buy order placed - Amount: {amount}, Price: {price}")
+
+            return buy_order
+        except Exception as e:
+            self.log(f"Error creating limit buy order: {e}", logging.ERROR)
+            return None
+
+    def place_limit_sell_order_take_profit(self, total_invested_amount_param, take_profit_percentage_param,
+                                           average_position_price_param, safety_orders):
+        try:
+            # Calculate the total invested amount based on the average position price
+            total_invested_amount = (
+                    total_invested_amount_param + (
+                        len(safety_orders) * self.params.base_order_size * average_position_price_param))
+
+            # Calculate take profit price
+            take_profit_price = average_position_price_param * (1 + take_profit_percentage_param)
+
+            order = self.sell(data=self.datas[0], size=total_invested_amount, exectype=bt.Order.Limit,
+                              price=take_profit_price)
+
+            # Log order information
+            self.log(
+                f"Limit sell order for take profit placed - Amount: {total_invested_amount}, Price: {take_profit_price}")
+
+            return order
+        except Exception as e:
+            self.log(f"Error creating limit sell order for take profit: {e}", logging.ERROR)
+            return None
+
+    def calculate_average_position_price(self, exchange, symbol_param):
+        try:
+            # Fetch your open orders
+            open_orders = exchange.fetch_open_orders(symbol_param)
+
+            # Filter open positions for the specific symbol
+            open_positions = [order for order in open_orders if order['symbol'] == symbol_param and order['side'] == 'sell']
+
+            if open_positions:
+                # Calculate the average position price
+                total_cost = sum(float(position['cost']) for position in open_positions)
+                total_amount = len(open_positions)  # Get the number of filled orders (base order + safety orders)
+                average_position_price_param = total_cost / total_amount
+                return average_position_price_param
+            else:
+                self.log("No open positions found.", logging.WARNING)
+                return None
+        except Exception as e:
+            self.log(f"Error calculating average position price: {e}", logging.ERROR)
+            return None
+
+    def calculate_volume_safety_order(self, average_position_price_param):
+        try:
+            volumes = []
+            current_volume = self.base_order_size
+            last_order_price = None
+
+            for _ in range(self.safety_order_count):
+                volumes.append(current_volume)
+
+                # Calculate the price for the current safety order with price deviation
+                if last_order_price:
+                    current_order_price = last_order_price * (1 + self.price_deviation_percentage)
+                else:
+                    current_order_price = None
+
+                # Update the last order price for the next iteration
+                last_order_price = current_order_price
+
+                # Calculate the volume based on the average position price
+                if average_position_price_param:
+                    current_volume = current_volume / average_position_price_param * current_order_price
+                else:
+                    self.log("Average position price is not available. Using default volume.", logging.WARNING)
+                    current_volume *= self.volume_scale_pro_safety_order
+
+            return volumes
+        except Exception as e:
+            self.log(f"Error calculating volumes for safety orders: {e}", logging.ERROR)
+            return []
+
+    def place_base_order(self, base_order_size_param):
+        try:
+            # Check the minimum order size for the symbol
+            symbol_info = self.exchange.markets.get(self.symbol)
+            if symbol_info['limits']['amount']['min'] > base_order_size_param:
+                self.log(f"The base order size is below the minimum order size for {self.symbol}.", logging.ERROR)
+                return
+
+            # Check if there are any open orders for the symbol
+            open_orders = self.exchange.fetch_open_orders(symbol=self.symbol)
+            open_base_orders = [order for order in open_orders if order['side'] == 'buy']
+
+            if open_base_orders:
+                self.log("Base order already exists. Skipping base order placement.", logging.WARNING)
+                return
+
+            # Place a market buy order for the base order
+            buy_order = self.create_order('buy', base_order_size_param)
+
+            if buy_order:
+                # Calculate the amount invested and append the trade details to trade_history
+                self.trade_history.append({
+                    'symbol': self.symbol,
+                    'type': 'buy',
+                    'amount': base_order_size_param,
+                    'price': buy_order['price'],
+                    'timestamp': buy_order['timestamp'],
+                    'profit': 0.03  # Replace 0.0 with the calculated profit/loss
+                })
+
+                # Calculate the total invested amount
+                filled_order_info = self.exchange.fetch_order(buy_order['id'], self.symbol)
+                total_invested_amount = filled_order_info['cost']
+
+                # Calculate the average position price
+                average_position = self.calculate_average_position_price(self.exchange, self.symbol)
+
+                # Calculate safety orders
+                safety_orders = self.calculate_volume_safety_order(average_position)
+
+                # Place the sell orders with the correct amount and average position price
+                self.place_limit_sell_order_take_profit(total_invested_amount, self.take_profit_percentage,
+                                                        average_position, safety_orders)
+
+            if self.safety_orders:
+                for i, order_volume in enumerate(self.safety_orders):
+                    self.log(f"Volume of Safety Order {i + 1}: {order_volume} XRP")
+            else:
+                self.log("Error occurred while calculating volumes for safety orders.", logging.ERROR)
+
+            self.place_base_order(self.base_order_size)  # Pass base_order_size as the argument
 
         except Exception as e:
-            logging.error(f"Error in monitoring loop: {e}")
+            self.log(f"Error occurred: {e}", logging.ERROR)
+
+            try:
+                # Add a delay before continuing with the next iteration (e.g., wait for 1 hour)
+                time.sleep(3600)  # 3600 seconds = 1 hour
+            except Exception as e:
+                self.log(f"Error occurred: {e}", logging.ERROR)
 
 
-def main():
-    exchange_instance = create_exchange()  # Create the exchange instance
-    print_spot_balance(exchange_instance)  # Print spot balance at the beginning
-    place_base_order(exchange_instance)  # Place the base order at the beginning
+if __name__ == '__main__':
+    # Create a cerebro engine instance
+    cerebro = bt.Cerebro()
 
-    monitor(exchange_instance)  # Monitor the bot status
+    # Define start and end dates
+    start_date = datetime.datetime(2022, 1, 1)
+    end_date = datetime.datetime(2023, 8, 3)
 
+    # Add your data feed with start and end dates
+    data = YourDataFeedHere(dataname='your_data.csv', fromdate=start_date, todate=end_date)  # Replace with your data feed and CSV file name
+    cerebro.adddata(data)
 
-if __name__ == "__main__":
-    main()
+    # Add your strategy
+    strategy = MyStrategy
+    cerebro.addstrategy(strategy)
+
+    # Set starting cash and commission settings
+    cerebro.broker.set_cash(1000)
+    cerebro.broker.setcommission(commission=0.001)
+
+    # Add analyzers to track desired results
+    cerebro.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
+    cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
+
+    # Print the starting cash
+    print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+
+    # Run the backtest
+    results = cerebro.run()
+
+    # Get the pyfolio analyzer
+    pyfolio_analyzer = results[0].analyzers.pyfolio.get_analysis()
+
+    # Get the DrawDown analyzer
+    drawdown_analyzer = results[0].analyzers.drawdown.get_analysis()
+
+    # Print additional results
+    print('Profit in $:', pyfolio_analyzer['returns'][-1])
+    print('Profit % versus set cash:', (pyfolio_analyzer['returns'][-1] / cerebro.broker.getvalue()) * 100)
+    print('Max Drawdown:', drawdown_analyzer['max']['drawdown'])
+    print('Completed Deals:', pyfolio_analyzer['trades'])
+    print('Average profit per completed deal:', pyfolio_analyzer['avg']['trade'])
+
+    # Generate the HTML report
+    cerebro.plot(style='candle')
