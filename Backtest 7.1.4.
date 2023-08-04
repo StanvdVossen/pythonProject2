@@ -17,16 +17,16 @@ class MyStrategy(bt.Strategy):
     )
 
 
-# ... (Your existing imports)
-
-class MyStrategy(bt.Strategy):
+# Define the YourDataFeedHere class
+class YourDataFeedHere(bt.feeds.GenericCSVData):
     params = (
-        ('base_order_size', 2.7),
-        ('take_profit_percentage', 0.03),
-        ('symbol', 'XRP/USDT'),
-        ('price_deviation_percentage', 0.02),
-        ('safety_order_count', 17),
-        ('volume_scale_pro_safety_order', 1.2)
+        ("datetime", 0),  # Column index for date (assuming it's the first column)
+        ("open", 1),  # Column index for open price
+        ("high", 2),  # Column index for high price
+        ("low", 3),  # Column index for low price
+        ("close", 4),  # Column index for close price
+        ("adjclose", 5),  # Column index for adjusted close price
+        ("volume", 6),  # Column index for volume
     )
 
     def __init__(self):
@@ -194,7 +194,8 @@ class MyStrategy(bt.Strategy):
             open_orders = exchange.fetch_open_orders(symbol_param)
 
             # Filter open positions for the specific symbol
-            open_positions = [order for order in open_orders if order['symbol'] == symbol_param and order['side'] == 'sell']
+            open_positions = [order for order in open_orders if
+                              order['symbol'] == symbol_param and order['side'] == 'sell']
 
             if open_positions:
                 # Calculate the average position price
@@ -309,9 +310,8 @@ if __name__ == '__main__':
     start_date = datetime.datetime(2022, 1, 1)
     end_date = datetime.datetime(2023, 8, 3)
 
-    # Add your data feed with start and end dates
-    data = YourDataFeedHere(dataname='your_data.csv', fromdate=start_date, todate=end_date)  # Replace with your data feed and CSV file name
-    cerebro.adddata(data)
+    data = YourDataFeedHere(dataname='your_data.csv')
+    cerebro.adddata(data, fromdate=datetime.datetime(2022, 1, 1), todate=datetime.datetime(2023, 8, 3))
 
     # Add your strategy
     strategy = MyStrategy
