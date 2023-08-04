@@ -5,8 +5,8 @@ import time
 exchange = ccxt.binance()
 
 # Set up your API credentials (replace with your own)
-exchange.apiKey = '2XcORfvSpaOdbcZXYQn3GOFemqy2kX3pxHq0S9dKNy1vI9R0TVZ6JQl8NMwSkQqt'
-exchange.secret = 'dqZfOfEdXJ6JzqliRDvcifECgq5m0v1eXxkUmC8aCu4g7um57TBxXAv7jR1jgnwu'
+exchange.apiKey = ''
+exchange.secret = ''
 
 # Define the symbol and parameters
 symbol = 'BTC/USDT'  # Replace with your desired trading pair
