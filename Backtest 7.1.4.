@@ -17,7 +17,6 @@ class MyStrategy(bt.Strategy):
     )
 
 
-# Define the YourDataFeedHere class
 class YourDataFeedHere(bt.feeds.GenericCSVData):
     params = (
         ("datetime", 0),  # Column index for date (assuming it's the first column)
@@ -27,6 +26,8 @@ class YourDataFeedHere(bt.feeds.GenericCSVData):
         ("close", 4),  # Column index for close price
         ("adjclose", 5),  # Column index for adjusted close price
         ("volume", 6),  # Column index for volume
+        ("fromdate", datetime.datetime(2022, 1, 1)),  # Start date
+        ("todate", datetime.datetime(2023, 8, 3)),  # End date
     )
 
     def __init__(self):
@@ -310,8 +311,8 @@ if __name__ == '__main__':
     start_date = datetime.datetime(2022, 1, 1)
     end_date = datetime.datetime(2023, 8, 3)
 
-    data = YourDataFeedHere(dataname='your_data.csv')
-    cerebro.adddata(data, fromdate=datetime.datetime(2022, 1, 1), todate=datetime.datetime(2023, 8, 3))
+    data = YourDataFeedHere(dataname='/Users/YourUsername/Desktop/your_data.csv')
+    cerebro.adddata(data)
 
     # Add your strategy
     strategy = MyStrategy
