@@ -4,13 +4,14 @@ import logging
 import Config
 import backtrader as bt
 import datetime
+import csv
 
 
 class MyStrategy(bt.Strategy):
     params = (
-        ('base_order_size', 2.7),
+        ('base_order_size', 10),
         ('take_profit_percentage', 0.03),
-        ('symbol', 'XRP/USDT'),
+        ('symbol', 'XRP/USD'),
         ('price_deviation_percentage', 0.02),
         ('safety_order_count', 17),
         ('volume_scale_pro_safety_order', 1.2)
@@ -20,15 +21,36 @@ class MyStrategy(bt.Strategy):
 class YourDataFeedHere(bt.feeds.GenericCSVData):
     params = (
         ("datetime", 0),  # Column index for date (assuming it's the first column)
-        ("open", 1),  # Column index for open price
-        ("high", 2),  # Column index for high price
-        ("low", 3),  # Column index for low price
-        ("close", 4),  # Column index for close price
-        ("adjclose", 5),  # Column index for adjusted close price
-        ("volume", 6),  # Column index for volume
-        ("fromdate", datetime.datetime(2022, 1, 1)),  # Start date
-        ("todate", datetime.datetime(2023, 8, 3)),  # End date
+        ("timeclose", 1),  # Column index for time of close
+        ("timehigh", 2),  # Column index for time of high
+        ("timelow", 3),  # Column index for time of low
+        ("open", 4),  # Column index for open price
+        ("high", 5),  # Column index for high price
+        ("low", 6),  # Column index for low price
+        ("close", 7),  # Column index for close price
+        ("volume", 8),  # Column index for volume
+        ("symbol", "XRPUSD"),  # Symbol of the financial instrument (e.g., XRPUSD, BTCUSD)
+        ("dataname", None),  # CSV file path
+        ("fromdate", None),  # Start date
+        ("todate", None),  # End date
     )
+
+    def save_to_csv(self):
+        # Specify the file path for the CSV file
+        file_path = r'C:\Users\rick_\OneDrive\Bureaublad\Backtest\First Backtest\data.csv'
+
+        # Open the file in write mode
+        with open(file_path, mode='w', newline='') as file:
+            writer = csv.writer(file)
+
+            # Write the header row to the CSV file
+            writer.writerow(["datetime", "open", "high", "low", "close", "volume"])
+
+            # Write the data rows to the CSV file
+            for row in self.get_data():
+                writer.writerow(row)
+
+        print(f'CSV file "{file_path}" created successfully.')
 
     def __init__(self):
         self.volume_scale_pro_safety_order = None
@@ -39,6 +61,9 @@ class YourDataFeedHere(bt.feeds.GenericCSVData):
         self.base_order_size = None
         self.symbol = None
         self.trade_history = []
+
+        # Initialize base_order_size
+        self.base_order_size = self.params.base_order_size
 
     def start(self):
         # Initialize indicators or other variables - All those functions has been fixed with "tuple"
@@ -308,10 +333,16 @@ if __name__ == '__main__':
     cerebro = bt.Cerebro()
 
     # Define start and end dates
-    start_date = datetime.datetime(2022, 1, 1)
-    end_date = datetime.datetime(2023, 8, 3)
+    start_date = datetime.datetime(2022, 8, 4)
+    end_date = datetime.datetime(2023, 8, 4)
 
-    data = YourDataFeedHere(dataname='/Users/YourUsername/Desktop/your_data.csv')
+    # Add your data feed with start and end dates
+    data = YourDataFeedHere(
+        dataname=r'C:\Users\rick_\OneDrive\Bureaublad\Backtest\First Backtest\XRP-USD.csv',
+        fromdate=start_date,
+        todate=end_date
+    )
+
     cerebro.adddata(data)
 
     # Add your strategy
@@ -320,7 +351,7 @@ if __name__ == '__main__':
 
     # Set starting cash and commission settings
     cerebro.broker.set_cash(1000)
-    cerebro.broker.setcommission(commission=0.001)
+    cerebro.broker.setcommission(commission=0.01)
 
     # Add analyzers to track desired results
     cerebro.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
@@ -346,4 +377,4 @@ if __name__ == '__main__':
     print('Average profit per completed deal:', pyfolio_analyzer['avg']['trade'])
 
     # Generate the HTML report
-    cerebro.plot(style='candle')
+    cerebro.plot(style='line')
