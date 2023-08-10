@@ -6,7 +6,6 @@ import Config
 # Set up logging to display logs in the console
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-
 # Function to create the exchange instance and handle API authentication
 def create_exchange():
     exchange_id = 'bybit'
@@ -270,13 +269,41 @@ if safety_orders:
 else:
     print("Error occurred while calculating volumes for safety orders.")
 
+# Place safety orders with increasing volumes for lower market prices
+def place_safety_orders(exchange, test=True):
+    try:
+        # Calculate initial price for the safety order (assuming current market price)
+        ticker = exchange.fetch_ticker(symbol)
+        last_price = ticker['last']
+
+        for volume in safety_orders:
+            # Calculate the price for the safety order using the price deviation
+            safety_order_price = last_price * (1 - price_deviation_percentage)
+            
+            if test:
+                # print test volumes and prices
+                print(f"Order of {volume} {ticker['symbol']} at {safety_order_price}")
+            else:
+                # Place the limit buy order for the safety order at the calculated price
+                create_order(exchange, 'buy', volume, safety_order_price)
+
+            # Update the last price for the next safety order
+            last_price = safety_order_price
+    except Exception as e:
+        logging.error(f"Error placing safety orders: {e}")
+
 # Example usage:
 exchange_instance = create_exchange()
 
 if exchange_instance is not None:
     print_spot_balance(exchange_instance)
+    
+    # Place safety orders.
+    place_safety_orders(exchange_instance,test=False)
+
     place_base_order(exchange_instance, base_order_size)  # Pass base_order_size as the argument
 
+    
     # Calculate the total invested amount
     total_invested_amount = calculate_total_invested_amount(exchange_instance)
 
@@ -290,6 +317,10 @@ while True:
 
     if exchange_instance is not None:
         print_spot_balance(exchange_instance)
+        
+        # Place safety orders.
+        place_safety_orders(exchange_instance,test=False)
+        
         place_base_order(exchange_instance, base_order_size)
 
         # Calculate the total invested amount
